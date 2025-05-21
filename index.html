@@ -79,25 +79,25 @@
     <div id="instructionScreen" class="overlay">
         <h1>Welcome to Whispers in the Garden!</h1>
         <p>This is a minimalist interactive visualization illustrating the Theory of Constraints (I=RT).</p>
-        <p><strong>Objective:</strong> Observe how "idea particles" flow from a Source to a Destination through three pathways, each with unique constraints. Try to optimize the flow!</p>
+        <p><strong>Objective:</strong> Observe how "idea particles" flow from a Source to a Destination through three pathways, each with unique constraints. Try to optimize the flow by interacting with the paths and the flow rate slider!</p>
         
         <h2>Gameplay Controls:</h2>
         <div id="desktopControls" style="display: none;">
             <ul>
-                <li><strong>Reshape Paths:</strong> Click and drag any path to alter its shape.</li>
+                <li><strong>Reshape Paths:</strong> Click and drag near a path's curve to alter its shape.</li>
                 <li><strong>Adjust Flow Rate:</strong> Use the slider at the bottom of the screen to change how quickly particles are generated.</li>
-                <li><strong>Boost Path Capacity:</strong> Click on a path segment to temporarily enhance its throughput.</li>
+                <li><strong>Boost Path Capacity:</strong> Click directly on a path segment (not the draggable part) to temporarily enhance its throughput.</li>
             </ul>
         </div>
         <div id="mobileControls" style="display: none;">
             <ul>
-                <li><strong>Reshape Paths:</strong> Tap and drag any path to alter its shape.</li>
+                <li><strong>Reshape Paths:</strong> Tap and drag near a path's curve to alter its shape.</li>
                 <li><strong>Adjust Flow Rate:</strong> Use the slider at the bottom of the screen to change how quickly particles are generated.</li>
-                <li><strong>Boost Path Capacity:</strong> Tap on a path segment to temporarily enhance its throughput.</li>
+                <li><strong>Boost Path Capacity:</strong> Tap directly on a path segment (not the draggable part) to temporarily enhance its throughput.</li>
             </ul>
         </div>
         <p>The game will run for <strong>2 minutes</strong>. Your performance and interaction style will be analyzed.</p>
-        <button id="startGameButton">Start Garden</button>
+        <button id="startGameButton">Tend Garden</button>
     </div>
 
     <div id="endScreen" class="overlay" style="display: none;">
@@ -130,28 +130,28 @@
 
     // Tech Stack Constants (from spec)
     const colors = {
-      background: "#f9f7f0",
-      particles: {
+      background: "#f9f7f0", // A very light cream, good base
+      particles: { // Kept these vibrant for visibility
         blue: "#3498db",
         green: "#2ecc71",
         red: "#e74c3c",
         yellow: "#f1c40f"
       },
       paths: {
-        base: "#34495e",
-        highlight: "#8e44ad",
-        boost: "#f39c12" 
+        base: "#8FBC8F", // DarkSeaGreen - more organic
+        highlight: "#DAA520", // Goldenrod - for highlights or active elements
+        boost: "#FFA07A" // LightSalmon - for boost effect
       },
       nodes: {
-        source: "#1abc9c",
-        destination: "#9b59b6"
+        source: "#5F9EA0", // CadetBlue
+        destination: "#BA55D3" // MediumOrchid
       },
-      text: "#2c3e50"
+      text: "#2F4F4F" // DarkSlateGray - for text, good contrast on light bg
     };
 
     // Core Mechanics Variables
     let particles = [];
-    let completedParticles = [];
+    let completedParticles = []; // Stores particles that have reached the destination
     let paths = [];
     let flowSlider;
     let particleColors;
@@ -162,6 +162,7 @@
     let particleBaseSize;
     let pathBaseThickness;
     let sourcePos, destPos;
+    let backgroundGraphics; // For pre-rendering background
 
     // Scoring and Analysis Variables
     let startTime;
@@ -180,7 +181,7 @@
 
     // Personality Analysis Variables
     let playerMetrics = {
-        pathPreference: [0, 0, 0], // Interaction count for each path
+        pathPreference: [0, 0, 0], 
         bottleneckResponsiveness: 0,
         experimentalIndex: 0,
         boostUsage: 0
@@ -189,54 +190,56 @@
     let lastBottleneckInteractions = [0,0,0];
 
     // Interaction Variables
-    let interactionTarget = null; // { type: 'path'/'slider', id: pathIndex }
+    let interactionTarget = null; 
     let draggingPath = null;
 
     // p5.js setup function
     function setup() {
         p5Canvas = createCanvas(windowWidth, windowHeight);
-        p5Canvas.id('defaultCanvas0'); // Ensure it has the default ID if not already
+        p5Canvas.id('defaultCanvas0'); 
         
         particleColors = Object.values(colors.particles);
         
-        setupLayout(); // Initial layout setup
+        // setupLayout will call drawBackgroundPattern once
+        // Initialize paths only when game starts
         
-        // Event listeners are set up after DOM is ready (see bottom of script)
-        // Initialize paths only when game starts, not in global setup
-        
-        // Handle instruction screen visibility based on device
+        if (isMobile === undefined) { // Initial check if not already set by early resize
+            isMobile = windowWidth < 768;
+        }
+
         if (isMobile) {
             document.getElementById('mobileControls').style.display = 'block';
+            document.getElementById('desktopControls').style.display = 'none';
         } else {
             document.getElementById('desktopControls').style.display = 'block';
+            document.getElementById('mobileControls').style.display = 'none';
         }
+        // Actual game init (paths, etc.) moved to initializeGame()
     }
     
     function initializeGame() {
         gameState = 'playing';
         document.getElementById('instructionScreen').style.display = 'none';
         document.getElementById('endScreen').style.display = 'none';
-        if(document.getElementById('defaultCanvas0')) {
-            document.getElementById('defaultCanvas0').style.display = 'block';
+        const p5CanvasEl = document.getElementById('defaultCanvas0');
+        if(p5CanvasEl) {
+            p5CanvasEl.style.display = 'block';
         }
+
+        setupLayout(); // Sets up sizes, positions, and draws background first time
 
         particles = [];
         completedParticles = [];
         
-        // Create paths with different constraint types
-        // Ensure paths are created *after* sourcePos and destPos are set by setupLayout
+        // Adjusted control points for better curves and separation
+        const cpOffsetY = isMobile ? 60 : 100; // Control point Y offset for top/bottom paths
         paths = [
-            new Path(0, 'rate', sourcePos, createVector(width * 0.5, height * 0.25), destPos),
-            new Path(1, 'time', sourcePos, createVector(width * 0.3, height * 0.5), destPos),
-            new Path(2, 'inventory', sourcePos, createVector(width * 0.7, height * 0.75), destPos)
+            new Path(0, 'rate', sourcePos, createVector(width * 0.5, height * 0.5 - cpOffsetY), destPos),
+            new Path(1, 'time', sourcePos, createVector(width * 0.5, height * 0.5), destPos), // Middle path, can be straighter
+            new Path(2, 'inventory', sourcePos, createVector(width * 0.5, height * 0.5 + cpOffsetY), destPos)
         ];
 
-        playerMetrics = {
-            pathPreference: [0, 0, 0],
-            bottleneckResponsiveness: 0,
-            experimentalIndex: 0,
-            boostUsage: 0
-        };
+        playerMetrics = { pathPreference: [0, 0, 0], bottleneckResponsiveness: 0, experimentalIndex: 0, boostUsage: 0 };
         lastBottleneckId = null;
         lastBottleneckInteractions = [0,0,0];
 
@@ -244,201 +247,197 @@
         lastHistoryLogTime = 0;
         
         startTime = millis();
-        flowSlider.value = 0.5; // Reset slider
-        loop(); // Ensure p5 loop is running
+        flowSlider.value = 0.35; // Start with a bit more flow
+        loop(); 
     }
 
-    // p5.js draw function
     function draw() {
         if (gameState === 'playing') {
-            background(colors.background + '40'); // Slight transparency for trail effect
+            image(backgroundGraphics, 0, 0); // Draw pre-rendered background
+            // background(colors.background + '60'); // Alternative: slight transparency for trails on dynamic background
 
-            // Generate particles based on current flow rate
-            // flowSlider.value (0.1 to 1.0) -> particles per second.
-            // Target 1 to 10 particles per second if frameRate is 60fps
-            // Frame interval = 60 / (sliderValue * 10)
-            let desiredParticlesPerSecond = map(flowSlider.value, 0.1, 1, 1, 15);
-            let frameInterval = frameRate() / desiredParticlesPerSecond;
+            let desiredParticlesPerSecond = map(flowSlider.value, 0.1, 1, 1, 12); // Slightly reduced max for clarity
+            let frameInterval = frameRate() > 0 ? frameRate() / desiredParticlesPerSecond : 60 / desiredParticlesPerSecond;
+
             if (frameCount % Math.max(1, int(frameInterval)) === 0) {
                 particles.push(new Particle(random(particleColors), sourcePos, particleBaseSize));
+                // console.log("Particle created. Total:", particles.length); // For debugging
             }
             
-            drawGardenElements(); // Placeholder for extra visual details
+            drawGardenElements();
 
             for (let path of paths) {
-                path.update();
+                path.update(); // Update path internal state (like gate timing, width oscillation)
                 path.display();
             }
             
-            updateParticles();
+            updateParticles(); // Update all particles (movement, constraints)
             
             for (let p of particles) {
-                p.display();
+                p.display(); // Draw all particles
             }
             
-            drawNode(sourcePos.x, sourcePos.y, nodeSize, true);
-            drawNode(destPos.x, destPos.y, nodeSize, false);
+            drawNode(sourcePos.x, sourcePos.y, nodeSize, true); // Draw source node
+            drawNode(destPos.x, destPos.y, nodeSize, false); // Draw destination node
             
-            drawSlider();
+            drawSlider(); // Draw UI slider
             
-            updateScore();
-            drawMetrics();
+            updateScore(); // Calculate metrics
+            drawMetrics(); // Display metrics
             
-            trackPlayerBehavior();
+            trackPlayerBehavior(); // Track player interactions for personality profile
 
             if (millis() - startTime > gameDuration) {
                 gameState = 'gameOver';
                 prepareEndScreenData();
-                noLoop(); // Stop p5 loop until explicitly restarted
+                noLoop(); 
             }
 
-        } else if (gameState === 'instructions') {
-            // Handled by HTML overlay
-            // Optionally draw a static background if needed when overlay is active
-            // background(colors.background);
-        } else if (gameState === 'gameOver') {
-            // Handled by HTML overlay, p5 canvas can be hidden or show final state
-            // For now, noLoop() is called, so it shows the last frame.
+        } else if (gameState === 'instructions' || gameState === 'gameOver') {
+            // Overlays handle display; p5 canvas can be hidden or show a static background
+            // If backgroundGraphics exists, draw it so there's no flicker if overlays are briefly hidden
+            if (backgroundGraphics) image(backgroundGraphics, 0, 0);
+            else background(colors.background);
         }
     }
     
-    function drawBackgroundPattern() {
-        // Simple, efficient noise-based background - drawn once or on resize
-        // For performance, this could draw to an offscreen buffer if complex
-        // The spec uses load/updatePixels, which is fine for setup/resize
-        loadPixels();
-        let detail = 0.01;
-        let variance = 15;
-        for (let x = 0; x < width; x++) {
-            for (let y = 0; y < height; y++) {
-                let noiseVal = noise(x * detail, y * detail) * variance;
-                let c = color(245 + noiseVal, 247 + noiseVal, 240 + noiseVal, 150); // Slightly more opaque
-                set(x, y, c);
+    function drawBackgroundPattern(pg) {
+        pg.loadPixels();
+        let detail = 0.008; // Slightly coarser noise for more visible pattern
+        let variance = 35; // Increased variance for more contrast
+        let baseR = 230, baseG = 238, baseB = 225; // Soft garden-like base
+
+        for (let x = 0; x < pg.width; x++) {
+            for (let y = 0; y < pg.height; y++) {
+                let noiseVal = noise(x * detail, y * detail, millis()*0.00001) * variance; // Subtle animation in noise
+                let r = constrain(baseR + noiseVal, 0, 255);
+                let g = constrain(baseG + noiseVal * 0.8, 0, 255); // Vary color channels differently
+                let b = constrain(baseB + noiseVal * 1.2, 0, 255);
+                pg.set(x, y, color(r, g, b, 200)); // Slightly more opaque
             }
         }
-        updatePixels();
+        pg.updatePixels();
     }
 
     function setupLayout() {
-        isMobile = windowWidth < 768; // Adjusted breakpoint for mobile
+        isMobile = windowWidth < 768; 
         
-        nodeSize = isMobile ? windowWidth * 0.12 : windowWidth * 0.07;
-        particleBaseSize = isMobile ? random(7,9) : random(10,14) ; // Per-particle random size within range
-        pathBaseThickness = isMobile ? 18 : 30;
+        nodeSize = isMobile ? windowWidth * 0.11 : windowWidth * 0.06;
+        particleBaseSize = isMobile ? random(8,10) : random(10,15) ; 
+        pathBaseThickness = isMobile ? 20 : 30;
         
-        sourcePos = createVector(width * 0.15, height * 0.5);
-        destPos = createVector(width * 0.85, height * 0.5);
+        // More inset source/dest for better path curves
+        sourcePos = createVector(width * 0.1, height * 0.5);
+        destPos = createVector(width * 0.9, height * 0.5);
         
         flowSlider = {
             x: width / 2,
             y: height - (isMobile ? 45 : 35),
-            w: width * (isMobile ? 0.7 : 0.5),
-            h: isMobile ? 30 : 20,
-            value: 0.5, // Initial value (0.1 to 1.0)
+            w: width * (isMobile ? 0.75 : 0.55),
+            h: isMobile ? 30 : 22,
+            value: flowSlider ? flowSlider.value : 0.35, // Preserve value on resize if already set
             dragging: false
         };
         
-        // Re-create paths if they exist (e.g. on resize during gameplay)
-        if (paths.length > 0 && gameState === 'playing') {
-            paths = [
-                new Path(0, paths[0].type, sourcePos, createVector(width * 0.5, height * 0.25), destPos, paths[0].controlPointUser),
-                new Path(1, paths[1].type, sourcePos, createVector(width * 0.3, height * 0.5), destPos, paths[1].controlPointUser),
-                new Path(2, paths[2].type, sourcePos, createVector(width * 0.7, height * 0.75), destPos, paths[2].controlPointUser)
+        // Create or recreate offscreen buffer for background
+        if (backgroundGraphics) backgroundGraphics.remove(); // Dispose of old one if it exists
+        backgroundGraphics = createGraphics(width, height);
+        drawBackgroundPattern(backgroundGraphics); // Draw it once
+
+        // Re-initialize paths with new layout if game is running
+        if (gameState === 'playing' && paths.length > 0) {
+            const cpOffsetY = isMobile ? 60 : 100;
+             paths = [
+                new Path(0, paths[0].type, sourcePos, createVector(width * 0.5, height * 0.5 - cpOffsetY), destPos, paths[0].controlPointUser),
+                new Path(1, paths[1].type, sourcePos, createVector(width * 0.5, height * 0.5), destPos, paths[1].controlPointUser),
+                new Path(2, paths[2].type, sourcePos, createVector(width * 0.5, height * 0.5 + cpOffsetY), destPos, paths[2].controlPointUser)
             ];
         }
-        // If game has not started, paths will be created by initializeGame()
     }
 
-    // UNIVERSAL FLOW SYSTEM
     class Particle {
         constructor(pColor, startPos, baseSize) {
             this.position = startPos.copy();
-            this.velocity = p5.Vector.random2D().mult(random(0.5,1.5));
+            this.velocity = p5.Vector.random2D().mult(random(0.8,1.8));
             this.acceleration = createVector(0, 0);
-            this.maxSpeed = isMobile ? 2.5 : 4;
+            this.maxSpeed = isMobile ? 2.8 : 4.5;
             this.color = pColor;
-            this.size = random(baseSize * 0.8, baseSize * 1.2); // Slight variation
-            this.pathPosition = 0; // Normalized position on current path (0 to 1)
+            this.size = random(baseSize * 0.7, baseSize * 1.1); 
+            this.pathPosition = 0; 
             this.currentPath = null;
             this.pathIndex = -1;
-            this.lifespan = 255; // For effects like fading if needed
-            this.onPathTime = 0; // Time spent on current path segment
-            this.shapeVariant = random(['circle', 'soft_square']); // Subtle shape variation
+            this.shapeVariant = random(['circle', 'soft_square']); 
         }
 
-        applyForce(force) {
-            this.acceleration.add(force);
-        }
+        applyForce(force) { this.acceleration.add(force); }
         
         findPathAndTarget() {
             let closestDistSq = Infinity;
             let targetPath = null;
-            let targetPoint = null;
+            let targetPointOnPath = null; // The actual point on the path curve
             let targetPathIndex = -1;
 
             for (let i = 0; i < paths.length; i++) {
                 const path = paths[i];
-                // Project particle onto path to find closest point and 't' value
-                let proj = path.getClosestPoint(this.position);
-                let dSq = p5.Vector.distSq(this.position, proj.point);
-
-                if (dSq < closestDistSq && dSq < sq(path.thickness * 3)) { // Only consider paths if reasonably close
-                    closestDistSq = dSq;
+                let proj = path.getClosestPoint(this.position); // Gets {point, t, distSq}
+                
+                // Prefer paths the particle is already on or very close to
+                let thresholdMultiplier = (this.currentPath === path) ? 4 : 2.5;
+                if (proj.distSq < closestDistSq && proj.distSq < sq(path.thickness * thresholdMultiplier)) {
+                    closestDistSq = proj.distSq;
                     targetPath = path;
                     targetPathIndex = i;
                     
-                    // Target a point slightly ahead on the path
-                    let lookAheadT = min(1, proj.t + 0.05); // Look ahead by 5% of path length
-                    targetPoint = path.getPointOnPath(lookAheadT);
+                    let lookAheadT = min(1, proj.t + 0.1); // Look further ahead for smoother following
+                    targetPointOnPath = path.getPointOnPath(lookAheadT);
                 }
             }
             
             if (targetPath) {
                 this.currentPath = targetPath;
-                this.pathIndex = targetPathIndex; // Store index of current path
-                // this.pathPosition can be set to proj.t if needed for precise path position
-                return targetPoint;
+                this.pathIndex = targetPathIndex;
+                return targetPointOnPath; // This is the steering target
             }
-            // If no path found, maybe head towards general destination or a default path
-            return p5.Vector.sub(destPos, this.position).normalize().mult(this.maxSpeed).add(this.position);
+            // Fallback: if no path found, steer towards destination
+            let generalDirection = p5.Vector.sub(destPos, this.position);
+            generalDirection.normalize().mult(this.maxSpeed * 0.5); // Move slower if not on path
+            return p5.Vector.add(this.position, generalDirection);
         }
-
 
         update() {
             let target = this.findPathAndTarget();
             if (target) {
                 let desired = p5.Vector.sub(target, this.position);
+                // desired.normalize(); // Normalizing can cause jerky movements if target is close
+                // desired.mult(this.maxSpeed);
+                // Instead, scale desired velocity by distance to target, up to maxSpeed
+                let d = desired.mag();
                 desired.normalize();
-                desired.mult(this.maxSpeed);
+                if (d < 100) { // If close to target point on path, scale speed
+                    desired.mult(map(d, 0, 100, 0, this.maxSpeed));
+                } else {
+                    desired.mult(this.maxSpeed);
+                }
+
                 let steer = p5.Vector.sub(desired, this.velocity);
-                steer.limit(isMobile ? 0.3 : 0.5); // Steering force
+                steer.limit(isMobile ? 0.35 : 0.55); 
                 this.applyForce(steer);
             }
 
-            // Apply gravity (optional, from spec) - simple downward pull
-            // this.applyForce(createVector(0, 0.05));
-
-
-            // Apply constraints if on a path
             if (this.currentPath) {
-                // Update particle's normalized position on its current path
                 this.pathPosition = this.currentPath.getClosestPoint(this.position).t;
-
                 let pathSpeedFactor = 1.0;
                 let blocked = false;
 
                 switch(this.currentPath.type) {
                     case 'rate':
                         let currentWidth = this.currentPath.getCurrentDynamicWidth();
-                        // Map width to speed: thinner path = slower particle
-                        // Assuming baseWidth is the "normal" speed reference
-                        pathSpeedFactor = map(currentWidth, this.currentPath.baseThickness * 0.3, this.currentPath.baseThickness * 1.5, 0.3, 1.5, true);
+                        pathSpeedFactor = map(currentWidth, this.currentPath.baseThickness * 0.2, this.currentPath.baseThickness * 1.8, 0.25, 1.6, true);
                         break;
                     case 'time':
                         for (let gate of this.currentPath.gates) {
-                            if (abs(this.pathPosition - gate.positionT) < 0.03 && !gate.isOpen) { // Check if near a closed gate
-                                blocked = true;
-                                break;
+                            if (abs(this.pathPosition - gate.positionT) < 0.04 && !gate.isOpen) { 
+                                blocked = true; break;
                             }
                         }
                         break;
@@ -450,25 +449,21 @@
                         break;
                 }
                 
-                if (blocked) {
-                    this.velocity.mult(0.1); // Drastically slow down if blocked
-                } else {
-                    this.velocity.mult(constrain(pathSpeedFactor, 0.1, 2.0)); // Apply speed factor from rate path
-                }
+                if (blocked) { this.velocity.mult(0.05); } // More pronounced slow down
+                else { this.velocity.mult(constrain(pathSpeedFactor, 0.1, 2.5)); }
             }
             
             this.velocity.add(this.acceleration);
             this.velocity.limit(this.maxSpeed);
             this.position.add(this.velocity);
-            this.acceleration.mult(0); // Reset acceleration
+            this.acceleration.mult(0); 
 
-            // Remove particles that reach destination
-            if (p5.Vector.dist(this.position, destPos) < nodeSize / 2 + this.size / 2) {
-                return true; // Mark for removal
+            if (p5.Vector.dist(this.position, destPos) < nodeSize / 2 + this.size) { // Generous destination collection
+                this.completionTime = millis(); // For rate calculation if needed
+                return true; 
             }
-            // Remove particles that go too far off screen (optional)
-            if (this.position.x < -this.size || this.position.x > width + this.size ||
-                this.position.y < -this.size || this.position.y > height + this.size) {
+            if (this.position.x < -this.size*2 || this.position.x > width + this.size*2 ||
+                this.position.y < -this.size*2 || this.position.y > height + this.size*2) {
                 return true; 
             }
             return false;
@@ -479,13 +474,9 @@
             translate(this.position.x, this.position.y);
             noStroke();
             fill(this.color);
-            
             if (this.shapeVariant === 'soft_square') {
-                 rectMode(CENTER);
-                 rect(0,0, this.size, this.size, this.size * 0.2); // Rounded corners
-            } else { // circle
-                 ellipse(0, 0, this.size, this.size);
-            }
+                 rectMode(CENTER); rect(0,0, this.size, this.size, this.size * 0.25);
+            } else { ellipse(0, 0, this.size, this.size); }
             pop();
         }
     }
@@ -493,697 +484,368 @@
     function updateParticles() {
       for (let i = particles.length - 1; i >= 0; i--) {
         let p = particles[i];
-        if (p.update()) { // update returns true if particle reached destination or is to be removed
-            if (p5.Vector.dist(p.position, destPos) < nodeSize / 2 + p.size / 2) {
+        if (p.update()) { 
+            if (p5.Vector.dist(p.position, destPos) < nodeSize / 2 + p.size) { // Check if actual destination reach
                  completedParticles.push(p);
-                 if (p.currentPath) p.currentPath.particlesPassed++;
+                 if (p.currentPath) p.currentPath.particlesPassedSinceLastCheck++;
             }
             particles.splice(i, 1);
         }
       }
     }
 
-    // CONSTRAINT PATHWAYS
     class Path {
         constructor(id, type, startVec, controlVec, endVec, existingControlPointUser = null) {
             this.id = id;
-            this.type = type; // 'rate', 'time', 'inventory'
+            this.type = type; 
             this.startPoint = startVec;
             this.endPoint = endVec;
-            // controlPointUser is what the user drags. controlPoint is used for drawing (can be smoothed)
             this.controlPointUser = existingControlPointUser ? existingControlPointUser.copy() : controlVec.copy(); 
-            this.controlPoint = this.controlPointUser.copy(); // Actual control point for curve
+            this.controlPoint = this.controlPointUser.copy();
 
             this.thickness = pathBaseThickness;
-            this.baseThickness = pathBaseThickness; // For 'rate' path
+            this.baseThickness = pathBaseThickness; 
             this.interactionCount = 0;
-            this.particlesPassed = 0;
+            this.particlesPassedSinceLastCheck = 0; // Used for throughput calculation
             this.lastBoostTime = -Infinity;
-            this.boostDuration = 3000; // 3 seconds
+            this.boostDuration = 3500; 
+            this.boostActive = false;
 
-            // Path-specific properties
-            if (this.type === 'rate') {
-                this.periodicWidthFactor = 1.0; // Multiplier for width, changes periodically
-            } else if (this.type === 'time') {
+            if (this.type === 'rate') { this.periodicWidthFactor = 1.0; } 
+            else if (this.type === 'time') {
                 this.gates = [];
-                for (let i = 0; i < 3; i++) { // 3 gates per time path
-                    this.gates.push({ 
-                        positionT: 0.2 + i * 0.3, // Normalized position along path
-                        isOpen: true,
-                        cycleOffset: i * PI / 3 
-                    });
+                for (let i = 0; i < 3; i++) { 
+                    this.gates.push({ positionT: 0.25 + i * 0.25, isOpen: true, cycleOffset: i * PI / 2.5 });
                 }
             } else if (this.type === 'inventory') {
-                this.filters = [];
-                let numFilters = 3;
+                this.filters = []; let numFilters = 3;
                 for (let i = 0; i < numFilters; i++) {
-                    this.filters.push({
-                        positionT: 0.2 + i * (0.6 / (numFilters-1||1) ), // Spread filters along middle 60%
-                        color: particleColors[i % particleColors.length]
-                    });
+                    this.filters.push({ positionT: 0.25 + i * (0.5 / (numFilters-1||1) ), color: particleColors[i % particleColors.length] });
                 }
             }
         }
 
         update() {
-            // Spring physics for control point towards user-dragged point (simple lerp for now)
-            this.controlPoint.lerp(this.controlPointUser, 0.1);
-
+            this.controlPoint.lerp(this.controlPointUser, 0.15); // Slightly faster spring to control point
             let currentTime = millis();
-            if (this.type === 'rate') {
-                // Width changes periodically: sin wave based on time
-                this.periodicWidthFactor = 0.75 + sin(currentTime * 0.001 + this.id) * 0.25; // Varies between 0.5 and 1.0
-            } else if (this.type === 'time') {
+            if (this.type === 'rate') { this.periodicWidthFactor = 0.7 + sin(currentTime * 0.0012 + this.id) * 0.3; } // Oscillates between 0.4 and 1.0
+            else if (this.type === 'time') {
                 for (let gate of this.gates) {
-                    // Gates open/close periodically
-                    gate.isOpen = sin(currentTime * 0.002 + gate.cycleOffset + this.id) > 0;
+                    gate.isOpen = this.boostActive ? true : (sin(currentTime * 0.0025 + gate.cycleOffset + this.id * 0.5) > 0);
                 }
             }
-            // Inventory filters are static unless changed by interaction
-            
-            // Reset boost effect after duration
-            if (currentTime - this.lastBoostTime > this.boostDuration) {
-                this.boostActive = false;
-            }
+            if (this.boostActive && currentTime - this.lastBoostTime > this.boostDuration) { this.boostActive = false; }
         }
         
         getCurrentDynamicWidth() {
             let w = this.baseThickness * this.periodicWidthFactor;
-            if (this.boostActive && this.type === 'rate') {
-                 w *= 1.5; // Boost makes it wider
-            }
+            if (this.boostActive && this.type === 'rate') { w *= 1.6; }
             return w;
         }
         
         getPointOnPath(t) {
-            // Quadratic Bezier curve point
-            let x = curvePoint(this.startPoint.x, this.startPoint.x, this.controlPoint.x, this.endPoint.x, t);
-            let y = curvePoint(this.startPoint.y, this.startPoint.y, this.controlPoint.y, this.endPoint.y, t);
-            // The above is for Catmull-Rom. For Quadratic Bezier:
-            let x_bz = (1-t)*(1-t)*this.startPoint.x + 2*(1-t)*t*this.controlPoint.x + t*t*this.endPoint.x;
-            let y_bz = (1-t)*(1-t)*this.startPoint.y + 2*(1-t)*t*this.controlPoint.y + t*t*this.endPoint.y;
+            let x_bz = pow(1-t,2)*this.startPoint.x + 2*(1-t)*t*this.controlPoint.x + pow(t,2)*this.endPoint.x;
+            let y_bz = pow(1-t,2)*this.startPoint.y + 2*(1-t)*t*this.controlPoint.y + pow(t,2)*this.endPoint.y;
             return createVector(x_bz, y_bz);
         }
         
-        // Get tangent (angle) on path at point t
         getAngleAt(t) {
-            t = constrain(t, 0, 1-0.001); // Ensure t and t+delta are valid
-            let p1 = this.getPointOnPath(t);
-            let p2 = this.getPointOnPath(t + 0.001); // A point very close ahead
+            t = constrain(t, 0.001, 0.999); 
+            let p1 = this.getPointOnPath(t-0.001); let p2 = this.getPointOnPath(t + 0.001);
             return atan2(p2.y - p1.y, p2.x - p1.x);
         }
 
         getClosestPoint(p) {
-            let closestDistSq = Infinity;
-            let closestT = 0;
-            let closestPt = null;
-            const steps = 100; // Increase for more accuracy
+            let closestDistSq = Infinity; let closestT = 0; let closestPt = null;
+            const steps = 50; // Reduced steps for performance, path following has look-ahead
             for (let i = 0; i <= steps; i++) {
-                let t = i / steps;
-                let pt = this.getPointOnPath(t);
+                let t = i / steps; let pt = this.getPointOnPath(t);
                 let dSq = p5.Vector.distSq(p, pt);
-                if (dSq < closestDistSq) {
-                    closestDistSq = dSq;
-                    closestT = t;
-                    closestPt = pt;
-                }
+                if (dSq < closestDistSq) { closestDistSq = dSq; closestT = t; closestPt = pt;}
             }
             return { point: closestPt, t: closestT, distSq: closestDistSq };
         }
 
-
         display() {
             noFill();
-            strokeWeight(this.thickness * 0.2); // Thin guideline
-            stroke(colors.paths.base + '50'); // Semi-transparent base
-            
-            beginShape();
-            for (let i = 0; i <= 1; i += 0.05) {
-                let p = this.getPointOnPath(i);
-                vertex(p.x, p.y);
-            }
-            endShape();
-
-            // Main path visualization (thicker line)
-            stroke(this.boostActive ? colors.paths.boost : colors.paths.base);
+            let currentPathColor = this.boostActive ? colors.paths.boost : colors.paths.base;
             
             // Constraint visualization
             switch(this.type) {
                 case 'rate':
-                    let segments = 20;
+                    let segments = 15; // Fewer segments for performance, relying on stroke cap for smoothness
                     for (let i = 0; i < segments; i++) {
-                        let t1 = i / segments;
-                        let t2 = (i + 1) / segments;
-                        let p1 = this.getPointOnPath(t1);
-                        let p2 = this.getPointOnPath(t2);
-                        
-                        // Width varies along path based on periodicFactor
-                        let segWidth = this.baseThickness * this.periodicWidthFactor * (0.6 + sin(t1 * TWO_PI * 2 + millis()*0.001) * 0.4);
-                        if (this.boostActive) segWidth *= 1.5;
-
-                        strokeWeight(max(2, segWidth));
+                        let t1 = i / segments; let t2 = (i + 1) / segments;
+                        let p1 = this.getPointOnPath(t1); let p2 = this.getPointOnPath(t2);
+                        let segWidthFactor = 0.65 + sin(t1 * TWO_PI * 1.5 + millis()*0.0015 + this.id) * 0.35; // Width varies along path
+                        let segWidth = this.baseThickness * this.periodicWidthFactor * segWidthFactor;
+                        if (this.boostActive) segWidth *= 1.6;
+                        stroke(currentPathColor);
+                        strokeWeight(max(3, segWidth)); strokeCap(ROUND); // Use ROUND cap
                         line(p1.x, p1.y, p2.x, p2.y);
                     }
                     break;
                 case 'time':
-                    strokeWeight(this.thickness);
-                    this.drawCurve(); // Draw base curve for time path
+                    stroke(currentPathColor); strokeWeight(this.thickness); strokeCap(PROJECT);this.drawCurve();
                     for (let gate of this.gates) {
-                        let p = this.getPointOnPath(gate.positionT);
-                        let angle = this.getAngleAt(gate.positionT);
-                        push();
-                        translate(p.x, p.y);
-                        rotate(angle + HALF_PI); // Align gate perpendicular to path
-                        
-                        rectMode(CENTER);
-                        let gateSize = this.thickness * 0.8;
-                        if (this.boostActive || gate.isOpen) {
-                            fill(colors.paths.highlight);
-                            rect(0, 0, gateSize, gateSize * 0.5); // Open gate visual (thinner)
-                        } else {
-                            fill(colors.paths.base);
-                            rect(0, 0, gateSize * 1.5, gateSize); // Closed gate visual (wider)
-                        }
+                        let p = this.getPointOnPath(gate.positionT); let angle = this.getAngleAt(gate.positionT);
+                        push(); translate(p.x, p.y); rotate(angle + HALF_PI); rectMode(CENTER);
+                        let gateW = this.thickness * 1.2; let gateH = this.thickness * 0.7;
+                        if (gate.isOpen) { fill(colors.paths.highlight); rect(0, 0, gateW*0.6, gateH*1.2); } // Open: thinner, taller
+                        else { fill(currentPathColor); rect(0, 0, gateW, gateH); } // Closed: wider
                         pop();
                     }
                     break;
                 case 'inventory':
-                    strokeWeight(this.thickness);
-                    this.drawCurve(); // Draw base curve for inventory path
+                    stroke(currentPathColor); strokeWeight(this.thickness); strokeCap(PROJECT);this.drawCurve();
                     for (let filter of this.filters) {
                         let p = this.getPointOnPath(filter.positionT);
-                        let angle = this.getAngleAt(filter.positionT);
-                        push();
-                        translate(p.x, p.y);
-                        // No rotation for simple circles needed, or rotate with path
-                        // rotate(angle + HALF_PI); 
-                        
-                        noStroke();
-                        fill(filter.color + (this.boostActive ? 'FF' : 'AA')); // More opaque if boosted
-                        ellipse(0, 0, this.thickness * (this.boostActive ? 1.5 : 1.2));
-                        
-                        // Draw a small icon/letter for color vision deficiency
-                        fill(0); // Black text
-                        textAlign(CENTER, CENTER);
-                        textSize(this.thickness * 0.5);
+                        push(); translate(p.x, p.y); noStroke();
+                        fill(filter.color + (this.boostActive ? 'FF' : 'CC'));
+                        ellipse(0, 0, this.thickness * (this.boostActive ? 1.6 : 1.3));
+                        fill(this.boostActive ? colors.background : colors.text); textAlign(CENTER, CENTER); textSize(this.thickness * 0.55);
                         text(this.getColorInitial(filter.color), 0, 1);
-
                         pop();
                     }
                     break;
             }
-            
-            // Draw control point for debugging/visualization
-            // fill(255,0,0); noStroke(); ellipse(this.controlPointUser.x, this.controlPointUser.y, 10, 10);
         }
         
-        drawCurve() { // Helper to draw the main curve line
-            beginShape();
-            for (let i = 0; i <= 1; i += 0.02) { // Increased steps for smoother curve
-                let p = this.getPointOnPath(i);
-                vertex(p.x, p.y);
-            }
-            endShape();
-        }
-
-
-        getColorInitial(hexColor) {
-            if (hexColor === colors.particles.blue) return 'B';
-            if (hexColor === colors.particles.green) return 'G';
-            if (hexColor === colors.particles.red) return 'R';
-            if (hexColor === colors.particles.yellow) return 'Y';
-            return '?';
-        }
-        
+        drawCurve() { beginShape(); for (let i = 0; i <= 1; i += 0.03) { let p = this.getPointOnPath(i); vertex(p.x, p.y); } endShape(); }
+        getColorInitial(hexColor) { return hexColor === colors.particles.blue ? 'B' : hexColor === colors.particles.green ? 'G' : hexColor === colors.particles.red ? 'R' : hexColor === colors.particles.yellow ? 'Y' : '?'; }
         getFilterAt(particlePathPosT) {
-            if (this.type !== 'inventory') return null;
-            for (let filter of this.filters) {
-                if (abs(particlePathPosT - filter.positionT) < 0.05) { // Check if particle is near a filter
-                     // If boosted, inventory path becomes "less selective" or allows all
-                    return this.boostActive ? null : filter;
-                }
+            if (this.type !== 'inventory' || this.boostActive) return null; // Boost makes inventory path non-selective
+            for (let filter of this.filters) { if (abs(particlePathPosT - filter.positionT) < 0.05) return filter; }
+            return null;
+        }
+        moveControlPoint(x, y) { this.controlPointUser.set(x, y); }
+        boost() {
+            if (millis() - this.lastBoostTime > this.boostDuration + 1500) { // Cooldown
+                this.lastBoostTime = millis(); this.boostActive = true; playerMetrics.boostUsage++;
+            }
+        }
+        isMouseOver(mx, my) { // Check for path interaction (dragging or boosting)
+            const checkDist = this.thickness * 0.8 + (isMobile ? 25 : 15); // Increased hit area
+            // Check near control point for dragging
+            if (dist(mx, my, this.controlPointUser.x, this.controlPointUser.y) < checkDist * 1.5) {
+                return { type: 'drag' };
+            }
+            // Check along the path for boosting
+            for (let t = 0; t <= 1; t += 0.1) { // Check 10 segments
+                let p = this.getPointOnPath(t);
+                if (dist(mx, my, p.x, p.y) < checkDist) return { type: 'boost' };
             }
             return null;
         }
-
-
-        moveControlPoint(x, y) {
-            this.controlPointUser.set(x, y);
-        }
-
-        boost() {
-            if (millis() - this.lastBoostTime > this.boostDuration + 1000) { // Cooldown of 1s after boost ends
-                this.lastBoostTime = millis();
-                this.boostActive = true;
-                playerMetrics.boostUsage++;
-                // Specific boost effects:
-                // 'rate': width already handled by this.boostActive in getCurrentDynamicWidth
-                // 'time': gates temporarily open
-                if (this.type === 'time') {
-                    this.gates.forEach(gate => gate.isOpen = true); // Temporarily force open
-                }
-                // 'inventory': filters temporarily allow all (handled by getFilterAt)
-            }
-        }
-
-        isMouseOver(mx, my) {
-            // Check rough bounding box first for performance
-            let minX = min(this.startPoint.x, this.endPoint.x, this.controlPoint.x) - this.thickness;
-            let maxX = max(this.startPoint.x, this.endPoint.x, this.controlPoint.x) + this.thickness;
-            let minY = min(this.startPoint.y, this.endPoint.y, this.controlPoint.y) - this.thickness;
-            let maxY = max(this.startPoint.y, this.endPoint.y, this.controlPoint.y) + this.thickness;
-
-            if (mx < minX || mx > maxX || my < minY || my > maxY) {
-                return false;
-            }
-
-            // More precise check: distance from mouse to path
-            const steps = 20; // Check 20 points along the curve
-            for (let i = 0; i <= steps; i++) {
-                let t = i / steps;
-                let p = this.getPointOnPath(t);
-                if (dist(mx, my, p.x, p.y) < this.thickness * 0.75 + (isMobile ? 22 : 10)) { // Larger hit area
-                    return true;
-                }
-            }
-            return false;
-        }
     }
 
-    // VISUAL DESIGN
-    function drawGardenElements() {
-        // Placeholder for "Path Decorations: Small generative patterns that respond to flow"
-        // Example: small, faint circles emanating from paths if many particles recently passed
-        for (let path of paths) {
-            if (path.particlesPassed > 0 && frameCount % 30 === 0) { // Every half second if particles are passing
-                let p = path.getPointOnPath(random(0.2, 0.8)); // Random point on path
-                fill(colors.paths.highlight + '33'); // Faint highlight color
-                noStroke();
-                ellipse(p.x, p.y, path.particlesPassed * 0.1, path.particlesPassed * 0.1); // Size based on flow
-                if (path.particlesPassed > 0) path.particlesPassed = max(0, path.particlesPassed - 0.1); // Decay slowly
-            }
-        }
-    }
+    function drawGardenElements() { /* Placeholder for future enhancements */ }
 
     function drawNode(x, y, r, isSource) {
-        push();
-        translate(x, y);
-        let pulse = sin(millis() * 0.002) * (r * 0.1);
-        let baseColor = isSource ? colors.nodes.source : colors.nodes.destination;
-        
-        // Outer pulsating glow
-        noStroke();
-        fill(baseColor + '55'); // Hex alpha
-        ellipse(0, 0, r + pulse, r + pulse);
-        
-        // Inner solid circle
-        fill(baseColor);
-        ellipse(0, 0, r * 0.7, r * 0.7);
-
-        // Emitter/collector effect
-        if (isSource) {
-            for(let i=0; i < 3; i++){
-                let angle = millis() * 0.001 + i * TWO_PI/3;
-                let ex = cos(angle) * (r*0.3 + pulse * 0.5);
-                let ey = sin(angle) * (r*0.3 + pulse * 0.5);
-                fill(colors.background);
-                ellipse(ex, ey, r*0.1);
-            }
-        } else {
-             for(let i=0; i < 3; i++){
-                let angle = -millis() * 0.0007 + i * TWO_PI/3;
-                let ex = cos(angle) * (r*0.25 + pulse * 0.3);
-                let ey = sin(angle) * (r*0.25 + pulse * 0.3);
-                fill(baseColor+'AA');
-                stroke(colors.background);
-                strokeWeight(1);
-                ellipse(ex, ey, r*0.15);
-            }
+        push(); translate(x, y); let pulse = sin(millis() * 0.0025) * (r * 0.12);
+        let baseC = isSource ? colors.nodes.source : colors.nodes.destination;
+        noStroke(); fill(baseC + '66'); ellipse(0, 0, r + pulse, r + pulse);
+        fill(baseC); ellipse(0, 0, r * 0.65, r * 0.65);
+        // More subtle emitter/collector effects
+        for(let i=0; i < 4; i++){
+            let angle = (isSource ? millis()*0.0015 : -millis()*0.001) + i * HALF_PI;
+            let rad = r * 0.3 + pulse * (isSource ? 0.6 : 0.4);
+            fill(colors.background + 'AA'); ellipse(cos(angle)*rad, sin(angle)*rad, r*0.08);
         }
         pop();
     }
     
-    // UNIVERSAL CONTROLS
     function drawSlider() {
-        push();
-        let s = flowSlider;
-        // Track
-        fill(colors.paths.base + '80');
-        noStroke();
-        rectMode(CENTER);
-        rect(s.x, s.y, s.w, s.h * 0.5, s.h * 0.25);
-        
-        // Thumb
+        push(); let s = flowSlider; rectMode(CENTER);
+        fill(colors.paths.base + '90'); noStroke(); rect(s.x, s.y, s.w, s.h * 0.4, s.h * 0.2);
         let thumbX = map(s.value, 0.1, 1, s.x - s.w / 2, s.x + s.w / 2);
-        fill(colors.particles.blue);
-        if (s.dragging) fill(colors.paths.highlight);
-        stroke(colors.background);
-        strokeWeight(2);
-        ellipse(thumbX, s.y, s.h * 1.2, s.h * 1.2);
+        fill(s.dragging ? colors.paths.highlight : colors.particles.blue); stroke(colors.background); strokeWeight(2);
+        ellipse(thumbX, s.y, s.h * 1.1, s.h * 1.1);
         pop();
-        
-        // Label
-        fill(colors.text);
-        noStroke();
-        textAlign(CENTER, CENTER);
-        textSize(isMobile ? 12 : 14);
-        text(`Flow Rate: ${(s.value * 100).toFixed(0)}%`, s.x, s.y - s.h * 1.5);
+        fill(colors.text); noStroke(); textAlign(CENTER, CENTER); textSize(isMobile ? 12.5 : 14.5);
+        text(`Flow: ${(s.value * 100).toFixed(0)}%`, s.x, s.y - s.h * 1.6);
     }
 
     function handleMousePressed(event) {
         if (gameState !== 'playing') return;
-
-        let mx = mouseX;
-        let my = mouseY;
-
-        // Check slider interaction first (it's on top visually)
+        let mx = mouseX; let my = mouseY;
         let s = flowSlider;
-        let sliderThumbX = map(s.value, 0.1, 1, s.x - s.w / 2, s.x + s.w / 2);
-        // Generous hit area for slider thumb and track
         if (my > s.y - s.h && my < s.y + s.h && mx > s.x - s.w/2 - s.h && mx < s.x + s.w/2 + s.h) {
-            s.dragging = true;
-            interactionTarget = { type: 'slider' };
-            // Directly update slider value if clicking on track
+            s.dragging = true; interactionTarget = { type: 'slider' };
             s.value = constrain(map(mx, s.x - s.w/2, s.x + s.w/2, 0.1, 1), 0.1, 1);
             return; 
         }
-
-        // Check path interaction (dragging or boosting)
-        for (let i = paths.length - 1; i >= 0; i--) { // Iterate backwards for top-most path
-            if (paths[i].isMouseOver(mx, my)) {
-                 // If already dragging a path, don't switch to another path for boosting
-                if (draggingPath !== null && draggingPath !== paths[i]) continue;
-
-                // Check if clicking near control point for dragging
-                // For simplicity, any click on path allows dragging its control point
-                // A more precise version would check dist to controlPointUser
-                if (dist(mx, my, paths[i].controlPointUser.x, paths[i].controlPointUser.y) < pathBaseThickness * 1.5) {
-                    draggingPath = paths[i];
-                    interactionTarget = { type: 'pathDrag', id: i };
-                    paths[i].interactionCount++;
-                    playerMetrics.pathPreference[i]++;
-                    return;
-                } else {
-                    // If not near control point, it's a boost click
-                    paths[i].boost();
-                    paths[i].interactionCount++;
-                    playerMetrics.pathPreference[i]++;
-                    interactionTarget = { type: 'pathBoost', id: i }; // For tracking, though boost is instant
-                    return;
+        for (let i = paths.length - 1; i >= 0; i--) {
+            let interactionType = paths[i].isMouseOver(mx, my);
+            if (interactionType) {
+                paths[i].interactionCount++; playerMetrics.pathPreference[i]++;
+                if (interactionType.type === 'drag') {
+                    draggingPath = paths[i]; interactionTarget = { type: 'pathDrag', id: i };
+                } else if (interactionType.type === 'boost') {
+                    paths[i].boost(); interactionTarget = { type: 'pathBoost', id: i };
                 }
+                return;
             }
         }
-        interactionTarget = null;
-        draggingPath = null;
+        interactionTarget = null; draggingPath = null;
     }
 
     function handleMouseDragged() {
         if (gameState !== 'playing' || !interactionTarget) return;
-        let mx = mouseX;
-        let my = mouseY;
-
+        let mx = mouseX; let my = mouseY;
         if (interactionTarget.type === 'slider' && flowSlider.dragging) {
             flowSlider.value = constrain(map(mx, flowSlider.x - flowSlider.w/2, flowSlider.x + flowSlider.w/2, 0.1, 1), 0.1, 1);
         } else if (interactionTarget.type === 'pathDrag' && draggingPath) {
             draggingPath.moveControlPoint(mx, my);
         }
     }
-
-    function handleMouseReleased() {
-        if (flowSlider) flowSlider.dragging = false; // Check if flowSlider is defined
-        draggingPath = null;
-        interactionTarget = null;
-    }
+    function handleMouseReleased() { if (flowSlider) flowSlider.dragging = false; draggingPath = null; interactionTarget = null; }
     
-    // SCORING AND ANALYSIS
     function updateScore() {
-        if (!startTime) return; // Game not started
+        if (!startTime) return; 
         let elapsedTimeSeconds = (millis() - startTime) / 1000;
-        if (elapsedTimeSeconds <= 0) elapsedTimeSeconds = 1; // Avoid division by zero
+        if (elapsedTimeSeconds <= 0) elapsedTimeSeconds = 0.01; 
 
         systemInventory = particles.length;
-        // Calculate current rate of particles completed in the last N seconds for smoother rate
-        const rateWindowSeconds = 5;
-        let recentCompletions = 0;
-        let actualRateWindow = 0;
-
-        for(let p of completedParticles){
-            if(p.completionTime && (millis() - p.completionTime < rateWindowSeconds * 1000)){
-                recentCompletions++;
-            }
-        }
-        // For overall rate:
         flowRate = completedParticles.length / elapsedTimeSeconds;
 
-
-        // Bottleneck: path with lowest throughput (particles passed / time)
-        // Or, path that is most "full" relative to its capacity (harder to define abstractly here)
-        // Using throughput:
-        let pathThroughputs = paths.map(path => {
-            return { id: path.id, throughput: path.particlesPassed / elapsedTimeSeconds };
+        let pathThroughputs = paths.map((path, idx) => {
+            let throughput = path.particlesPassedSinceLastCheck / (historyInterval/1000); // particles per sec for this interval
+            // path.particlesPassedSinceLastCheck = 0; // Reset for next interval - MOVED to history logging
+            return { id: idx, throughput: throughput };
         });
 
-        if (pathThroughputs.length > 0) {
+        if (pathThroughputs.length > 0 && millis() - lastHistoryLogTime >= historyInterval ) { // only update bottleneckPathId when logging
             let minThroughputPath = pathThroughputs.reduce((a, b) => a.throughput < b.throughput ? a : b);
-            bottleneckPathId = minThroughputPath.id + 1; // 1-indexed for display
-        } else {
-            bottleneckPathId = 'N/A';
+            bottleneckPathId = minThroughputPath.id + 1; 
+        } else if (bottleneckPathId === 'N/A' && pathThroughputs.length > 0) {
+             bottleneckPathId = (pathThroughputs.reduce((a, b) => a.throughput < b.throughput ? a : b).id) + 1;
         }
 
-        // Log history
-        if (millis() - lastHistoryLogTime > historyInterval) {
+
+        if (millis() - lastHistoryLogTime >= historyInterval) {
             metricsHistory.time.push(elapsedTimeSeconds.toFixed(1));
-            metricsHistory.flowRate.push(flowRate.toFixed(2));
+            metricsHistory.flowRate.push(flowRate.toFixed(2)); // Overall flow rate
             metricsHistory.inventory.push(systemInventory);
             metricsHistory.bottleneck.push(bottleneckPathId);
             lastHistoryLogTime = millis();
+            paths.forEach(p => p.particlesPassedSinceLastCheck = 0); // Reset counter after use
         }
     }
 
     function drawMetrics() {
-        fill(colors.text);
-        noStroke();
-        textAlign(LEFT, TOP);
-        textSize(isMobile ? 12 : 16);
-        
-        let textX = 20;
-        let textY = 20;
-        let lineSpacing = isMobile ? 18 : 22;
-
-        text(`Time: ${((gameDuration - (millis() - startTime)) / 1000).toFixed(0)}s`, textX, textY);
-        textY += lineSpacing;
-        text(`Flow Rate (R): ${flowRate.toFixed(1)} p/s`, textX, textY);
-        textY += lineSpacing;
-        text(`Inventory (I): ${systemInventory}`, textX, textY);
-        textY += lineSpacing;
-        let flowTime = (flowRate > 0) ? (systemInventory / flowRate).toFixed(1) : 'N/A';
-        text(`Flow Time (T): ${flowTime} s`, textX, textY);
-        textY += lineSpacing;
+        fill(colors.text); noStroke(); textAlign(LEFT, TOP); textSize(isMobile ? 12 : 15);
+        let textX = 20; let textY = 20; let lineSpacing = isMobile ? 18 : 21;
+        text(`Time Left: ${max(0, (gameDuration - (millis() - startTime)) / 1000).toFixed(0)}s`, textX, textY); textY += lineSpacing;
+        text(`Flow Rate (R): ${flowRate.toFixed(1)} p/s`, textX, textY); textY += lineSpacing;
+        text(`Inventory (I): ${systemInventory}`, textX, textY); textY += lineSpacing;
+        let flowTime = (flowRate > 0.01) ? (systemInventory / flowRate).toFixed(1) : 'N/A';
+        text(`Flow Time (T): ${flowTime} s`, textX, textY); textY += lineSpacing;
         text(`Bottleneck: Path ${bottleneckPathId}`, textX, textY);
     }
 
-    // PERSONALITY ANALYSIS
-    function trackPlayerBehavior() {
-        if (frameCount % 60 === 0) { // Update once per second
+    function trackPlayerBehavior() { /* Same as before */ 
+        if (frameCount % 60 === 0) { 
             if (lastBottleneckId !== null && bottleneckPathId !== 'N/A' && parseInt(bottleneckPathId)-1 !== lastBottleneckId) {
-                // Check if player interacted with the *new* bottleneck path since it became a bottleneck
                 let newBottleneckIdx = parseInt(bottleneckPathId)-1;
-                if (paths[newBottleneckIdx].interactionCount > lastBottleneckInteractions[newBottleneckIdx]) {
+                if (paths[newBottleneckIdx] && paths[newBottleneckIdx].interactionCount > lastBottleneckInteractions[newBottleneckIdx]) {
                     playerMetrics.bottleneckResponsiveness++;
                 }
             }
-            
-            if (bottleneckPathId !== 'N/A') {
+            if (bottleneckPathId !== 'N/A' && paths[parseInt(bottleneckPathId)-1]) {
                 lastBottleneckId = parseInt(bottleneckPathId)-1;
                 paths.forEach((path, idx) => lastBottleneckInteractions[idx] = path.interactionCount);
             }
-
-            // Experimental Index: stddev / mean of path preferences
-            let prefs = playerMetrics.pathPreference;
-            let meanPref = prefs.reduce((a, b) => a + b, 0) / prefs.length;
+            let prefs = playerMetrics.pathPreference; let meanPref = prefs.reduce((a, b) => a + b, 0) / prefs.length;
             if (meanPref > 0) {
                 let variance = prefs.reduce((sum, val) => sum + Math.pow(val - meanPref, 2), 0) / prefs.length;
-                let stdDev = Math.sqrt(variance);
-                playerMetrics.experimentalIndex = stdDev / meanPref;
-            } else {
-                playerMetrics.experimentalIndex = 0;
-            }
+                playerMetrics.experimentalIndex = Math.sqrt(variance) / meanPref;
+            } else { playerMetrics.experimentalIndex = 0; }
         }
     }
-
-    function prepareEndScreenData() {
-        // Final calculations for display
-        let totalElapsedTime = (millis() - startTime) / 1000;
-        totalElapsedTime = max(totalElapsedTime, 1); // avoid div by zero
-
+    function prepareEndScreenData() { /* Same as before, ensure IDs are correct */ 
+        let totalElapsedTime = max(1, (millis() - startTime) / 1000);
         let avgFlowRate = completedParticles.length / totalElapsedTime;
-        // Avg inventory: could be arithmetic mean of all logged inventories
-        let avgInventory = metricsHistory.inventory.reduce((sum, val) => sum + val, 0) / metricsHistory.inventory.length || 0;
-        let avgFlowTime = avgFlowRate > 0 ? avgInventory / avgFlowRate : 0;
+        let avgInventory = metricsHistory.inventory.length > 0 ? metricsHistory.inventory.reduce((s,v)=>s+v,0)/metricsHistory.inventory.length : 0;
+        let avgFlowTime = avgFlowRate > 0.01 ? avgInventory / avgFlowRate : 0;
 
         document.getElementById('finalFlowRate').textContent = avgFlowRate.toFixed(2);
         document.getElementById('finalInventory').textContent = avgInventory.toFixed(1);
         document.getElementById('finalFlowTime').textContent = avgFlowTime.toFixed(1);
         document.getElementById('totalProcessed').textContent = completedParticles.length;
 
-        // Personality Profile
-        let profile = "";
-        const totalInteractions = playerMetrics.pathPreference.reduce((a,b) => a+b, 0);
+        let profile = ""; const totalInteractions = playerMetrics.pathPreference.reduce((a,b) => a+b, 0) + playerMetrics.boostUsage;
+        if(playerMetrics.boostUsage > paths.length * 1.5){ profile += "An **Energetic Cultivator**, you actively boosted path flows! ";}
+        else if(playerMetrics.boostUsage < paths.length * 0.5 && totalInteractions > 3){ profile += "A **Steady Hand**, preferring structural changes over temporary boosts. ";}
+        if(playerMetrics.experimentalIndex > 0.7 && totalInteractions > 3){ profile += "A **Curious Explorer**, you reshaped many pathways. ";}
+        else if(playerMetrics.experimentalIndex < 0.4 && totalInteractions > 3){ profile += "A **Focused Sculptor**, likely perfecting specific routes. ";}
+        else if(totalInteractions <=3 ){ profile += "A **Gentle Observer**, letting the garden find its rhythm. ";}
+        if(playerMetrics.bottleneckResponsiveness > 1){ profile += "You're **Quick to Adapt**, addressing bottlenecks as they shift. ";}
+        else if(totalInteractions > 3){ profile += "You maintain a **Strategic Eye**, focusing on overall system design. ";}
+        if (profile === "") profile = "Your unique gardening style is noted!";
+        document.getElementById('personalityProfile').innerHTML = profile;
 
-        if (playerMetrics.boostUsage > paths.length * 2) { // Arbitrary threshold for "active booster"
-            profile += "You're an **Active Catalyst**, frequently boosting paths to clear jams! ";
-        } else if (playerMetrics.boostUsage < paths.length * 0.5 && totalInteractions > 5) {
-             profile += "You're a **Patient Observer**, preferring to let the system find its own balance. ";
-        }
-
-
-        if (playerMetrics.experimentalIndex > 0.8 && totalInteractions > 5) { // High variance in path interactions
-            profile += "A **Curious Tinkerer**, you explored and reshaped various pathways. ";
-        } else if (playerMetrics.experimentalIndex < 0.3 && totalInteractions > 5) { // Low variance, focused on one/few paths
-             profile += "A **Focused Optimizer**, you likely identified a key path and concentrated your efforts there. ";
-        } else if (totalInteractions <=5 ) {
-             profile += "A **Minimalist Gardener**, you preferred to let the garden grow mostly on its own. ";
-        }
-
-
-        if (playerMetrics.bottleneckResponsiveness > 2) {
-            profile += "You're **Responsive to Bottlenecks**, quickly addressing constraints as they appear. ";
-        } else if (totalInteractions > 5) {
-            profile += "You seem to favor a **Strategic Overview** rather than reacting to every bottleneck. ";
-        }
-        
-        if (profile === "") profile = "Your unique gardening style is intriguing!";
-
-        document.getElementById('personalityProfile').innerHTML = profile; // Use innerHTML for bold tags
-
-        // Show end screen
         document.getElementById('endScreen').style.display = 'flex';
-        if(document.getElementById('defaultCanvas0')) {
-            document.getElementById('defaultCanvas0').style.display = 'none';
-        }
-
-        // Create Charts
-        new Chart(document.getElementById('flowRateChart').getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: metricsHistory.time,
-                datasets: [{
-                    label: 'Flow Rate (particles/sec)',
-                    data: metricsHistory.flowRate,
-                    borderColor: colors.particles.blue,
-                    tension: 0.1,
-                    fill: false
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true } } }
+        const p5CanvasEl = document.getElementById('defaultCanvas0'); if(p5CanvasEl) p5CanvasEl.style.display = 'none';
+        
+        // Ensure old charts are destroyed before creating new ones
+        ['flowRateChart', 'inventoryChart'].forEach(id => {
+            let chartInstance = Chart.getChart(id); if (chartInstance) chartInstance.destroy();
         });
 
-        new Chart(document.getElementById('inventoryChart').getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: metricsHistory.time,
-                datasets: [{
-                    label: 'System Inventory (particles)',
-                    data: metricsHistory.inventory,
-                    borderColor: colors.particles.green,
-                    tension: 0.1,
-                    fill: false
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true } } }
-        });
+        new Chart(document.getElementById('flowRateChart').getContext('2d'), { type: 'line', data: { labels: metricsHistory.time, datasets: [{ label: 'Avg Flow Rate (p/s)', data: metricsHistory.flowRate, borderColor: colors.particles.blue, tension: 0.1, fill: false }] }, options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true } } } });
+        new Chart(document.getElementById('inventoryChart').getContext('2d'), { type: 'line', data: { labels: metricsHistory.time, datasets: [{ label: 'System Inventory', data: metricsHistory.inventory, borderColor: colors.particles.green, tension: 0.1, fill: false }] }, options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true } } } });
     }
 
-
-    // Input Handlers (unified for touch and mouse)
-    function touchStarted() {
-      if (gameState === 'playing') {
-        handleMousePressed(); // p5 maps touch to mouseX, mouseY
-        return false; // prevent default browser behavior
-      }
-      return true;
-    }
-
-    function touchMoved() {
-      if (gameState === 'playing') {
-        handleMouseDragged();
-        return false; // prevent default browser behavior
-      }
-      return true;
-    }
-
-    function touchEnded() {
-      if (gameState === 'playing') {
-        handleMouseReleased();
-        return false; // prevent default browser behavior
-      }
-      return true;
-    }
+    function touchStarted() { if (gameState === 'playing') { handleMousePressed(); return false; } return true; }
+    function touchMoved() { if (gameState === 'playing') { handleMouseDragged(); return false; } return true; }
+    function touchEnded() { if (gameState === 'playing') { handleMouseReleased(); return false; } return true; }
     
-    // Window resize handling for responsive design
     function windowResized() {
         resizeCanvas(windowWidth, windowHeight);
-        setupLayout(); // Recalculate layout variables
-        if (gameState === 'playing') { // Only redraw background if playing
-            // drawBackgroundPattern(); // This is slow. Consider a simpler background or one drawn to buffer.
-                                    // For now, background is handled by draw() with transparency.
-        }
+        setupLayout(); // This will redraw background and update positions
     }
 
-    // Event listeners for HTML buttons
     document.addEventListener('DOMContentLoaded', (event) => {
-        // Check for p5.js canvas and hide it if instruction screen is up
         const p5_canvas_el = document.getElementById('defaultCanvas0');
         if (p5_canvas_el) p5_canvas_el.style.display = 'none';
         
         document.getElementById('startGameButton').addEventListener('click', () => {
-             if (!p5Canvas) { // p5 setup might not have run if script loaded async
-                console.error("p5.js canvas not ready. Ensure p5 setup completes.");
-                return;
+            if (!p5Canvas && typeof setup === 'function') { 
+                console.error("p5.js setup may not have fully completed or canvas not ready."); 
+                // Attempt to ensure setup has run. This is a bit of a failsafe.
+                // If p5 is in instance mode, this won't work directly.
+                // Assuming global mode for now.
+                if (typeof setup === 'function' && !select('#defaultCanvas0')) {
+                  // This is tricky, p5 setup is usually self-invoking.
+                  // For now, rely on standard p5 load order.
+                }
             }
             initializeGame();
         });
+        document.getElementById('playAgainButton').addEventListener('click', () => { initializeGame(); });
 
-        document.getElementById('playAgainButton').addEventListener('click', () => {
-            // Simplest way to reset is to reload, or re-initialize all game state
-            // For full reset:
-            // location.reload(); 
-            // Or re-initialize:
-            document.getElementById('endScreen').style.display = 'none';
-             // Destroy old charts if they exist to prevent Chart.js errors on re-creation
-            let flowChartInstance = Chart.getChart("flowRateChart");
-            if (flowChartInstance) flowChartInstance.destroy();
-            let inventoryChartInstance = Chart.getChart("inventoryChart");
-            if (inventoryChartInstance) inventoryChartInstance.destroy();
-            
-            initializeGame();
-        });
-
-        // Set up p5.js mouse and touch event handlers
-        // These are usually set in setup(), but to ensure they don't fire before game starts
-        // they are wrapped or managed by gameState.
         // p5 global functions mousePressed, mouseDragged, mouseReleased are automatically called.
         // For touch, we define touchStarted, touchMoved, touchEnded globally.
-        // The functions handleMousePressed, etc. are already defined globally for p5.
     });
 
-    // Override p5.js global input functions
-    // This is to ensure they only operate when 'playing'
-    // (This is one way; another is checking gameState within each function)
-    const p5_mousePressed = mousePressed;
+    // Make sure p5 input functions correctly call our handlers if gameState is 'playing'
+    // (p5 will call these global functions if they exist)
+    const originalMousePressed = typeof mousePressed === 'function' ? mousePressed : null;
     mousePressed = function(event) {
+        if (originalMousePressed && gameState !== 'playing') originalMousePressed(event); // Allow p5 default if not playing
         if (gameState === 'playing') handleMousePressed(event);
     };
-    const p5_mouseDragged = mouseDragged;
+    const originalMouseDragged = typeof mouseDragged === 'function' ? mouseDragged : null;
     mouseDragged = function(event) {
+        if (originalMouseDragged && gameState !== 'playing') originalMouseDragged(event);
         if (gameState === 'playing') handleMouseDragged(event);
     };
-    const p5_mouseReleased = mouseReleased;
+    const originalMouseReleased = typeof mouseReleased === 'function' ? mouseReleased : null;
     mouseReleased = function(event) {
+        if (originalMouseReleased && gameState !== 'playing') originalMouseReleased(event);
         if (gameState === 'playing') handleMouseReleased(event);
     };
-    // Touch events are handled by functions defined above (touchStarted, touchMoved, touchEnded)
-
     </script>
 </body>
 </html>
